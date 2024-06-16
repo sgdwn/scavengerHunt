@@ -17,7 +17,7 @@ async function checkCode() {
     }
 
     try {
-        const response = await fetch('https://production.scavenger-hunt.sgdwn.workers.dev/verify', {
+        const response = await fetch('https://your-worker-url.com/verify', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -25,19 +25,23 @@ async function checkCode() {
             body: JSON.stringify({ code: enteredCode })
         });
 
-        const data = await response.json();
-        if (data.valid) {
-            // Update total points
-            totalPoints += data.points;
-            // Save updated points to localStorage
-            localStorage.setItem('totalPoints', totalPoints);
-            document.getElementById('result').innerHTML = `<span style="color: green;">Code ${enteredCode} is valid. You earned ${data.points} points!</span>`;
+        if (response.ok) {
+            const data = await response.json();
+            if (data.valid) {
+                // Update total points
+                totalPoints += data.points;
+                // Save updated points to localStorage
+                localStorage.setItem('totalPoints', totalPoints);
+                document.getElementById('result').innerHTML = `<span style="color: green;">Code ${enteredCode} is valid. You earned ${data.points} points!</span>`;
+            } else {
+                document.getElementById('result').innerHTML = `<span style="color: red;">Code ${enteredCode} is invalid. Try again.</span>`;
+            }
+            
+            // Update the UI with the new points
+            document.getElementById('total-points').innerText = `Total Points: ${totalPoints}`;
         } else {
-            document.getElementById('result').innerHTML = `<span style="color: red;">Code ${enteredCode} is invalid. Try again.</span>`;
+            document.getElementById('result').innerHTML = `<span style="color: red;">Error checking the code. Please try again later.</span>`;
         }
-        
-        // Update the UI with the new points
-        document.getElementById('total-points').innerText = `Total Points: ${totalPoints}`;
     } catch (error) {
         document.getElementById('result').innerHTML = `<span style="color: red;">Error checking the code. Please try again later.</span>`;
         console.error('Error:', error);
