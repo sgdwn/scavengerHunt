@@ -17,7 +17,7 @@ async function checkCode() {
     }
 
     try {
-        const response = await fetch('https://production.scavenger-hunt.sgdwn.workers.dev//verify', {
+        const response = await fetch('https://production.scavenger-hunt.sgdwn.workers.dev/verify', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
