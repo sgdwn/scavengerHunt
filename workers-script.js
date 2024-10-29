@@ -1,25 +1,32 @@
-// Cloudflare Worker script to serve static content and handle code verification
-
 const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Scavenger Hunt Check-in</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+    <div class="link-container">
+        <a href="/help.html">Help</a>
+        <!-- <a href="/privacy.html">Privacy</a> -->
+        <a href="#" id="theme-toggle">Dark Mode 🌒</a>
+    </div> 
     <div class="container">
         <div id="event-code-section">
-            <h1>Welcome to the Scavenger Hunt!</h1>
+            <h1><i>Scavenger Hunt</i></h1>
             <p>Enter your event code:</p>
-            <input type="text" id="event-code-input" placeholder="Event code">
-            <button onclick="saveEventCode()">Save Event Code</button>
+            <input type="text" id="event-code-input" placeholder="Event code" name="eventCodeParam">
+            <p>Enter your team name:</p>
+            <input type="text" id="team-name-input" placeholder="Team name">
+            <button onclick="saveEventCode()">Save</button> 
             <div id="event-code-error"></div>
         </div>
         <div id="check-in-section" style="display: none;">
             <h1>Event: <span id="displayed-event-code"></span></h1>
+            <p>Team: <span id="displayed-team-name"></span></p> <div id="team-name-error"></div> 
             <p>Enter your 4-digit check-in code:</p>
             <input type="text" inputmode="numeric" id="code-input" maxlength="4" placeholder="4-digit code">
             <button onclick="checkCode()">Check-in</button>
@@ -34,15 +41,46 @@ const html = `
             if (savedEventCode) {
                 showCheckInSection(savedEventCode);
             }
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.body.classList.add('dark-mode');
+            }
+            const savedTeamName = localStorage.getItem('teamName');
+            if (savedTeamName) {
+                document.getElementById('team-name-input').value = savedTeamName;
+            }
         });
+
+        const themeToggle = document.getElementById('theme-toggle');
+
+        themeToggle.addEventListener('click', (event) => {
+            event.preventDefault(); // Prevent default link behavior
+
+            document.body.classList.toggle('dark-mode');
+
+            // Update the link text based on the current mode
+            if (document.body.classList.contains('dark-mode')) {
+                themeToggle.textContent = 'Light Mode ☀️';
+            } else {
+                themeToggle.textContent = 'Dark Mode 🌒';
+            }
+        });
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventCodeParam = urlParams.get('event');
+        // Populate the form field
+        if (eventCodeParam) {
+            document.getElementById('event-code-input').value = eventCodeParam;
+        }
 
         function saveEventCode() {
             const eventCode = document.getElementById('event-code-input').value.trim();
-            if (eventCode) {
+            const teamName = document.getElementById('team-name-input').value.trim(); 
+            if (eventCode && teamName) {
                 localStorage.setItem('eventCode', eventCode);
-                showCheckInSection(eventCode);
+                localStorage.setItem('teamName', teamName); 
+                showCheckInSection(eventCode, teamName); 
             } else {
-                document.getElementById('event-code-error').innerHTML = \`<span style="color: red;">Please enter a valid event code.</span>\`;
+                document.getElementById('event-code-error').innerHTML = '<span style="color: red;">Please enter a valid event code and team name.</span>';
             }
         }
 
@@ -53,8 +91,17 @@ const html = `
             updateTotalPoints(eventCode);
         }
 
+        function showCheckInSection(eventCode, teamName) { 
+            document.getElementById('event-code-section').style.display = 'none';
+            document.getElementById('check-in-section').style.display = 'block';
+            document.getElementById('displayed-event-code').innerText = eventCode;
+            document.getElementById('displayed-team-name').innerText = teamName; 
+            updateTotalPoints(eventCode);
+        }
+
         function changeEventCode() {
             localStorage.removeItem('eventCode');
+            localStorage.removeItem('teamName');
             document.getElementById('event-code-section').style.display = 'block';
             document.getElementById('check-in-section').style.display = 'none';
         }
@@ -65,7 +112,7 @@ const html = `
             const resultDiv = document.getElementById('result');
 
             if (!eventCode || enteredCode.length !== 4) {
-                resultDiv.innerHTML = \`<span style="color: red;">Please enter a 4-digit check-in code.</span>\`;
+                resultDiv.innerHTML = '<span style="color: red;">Please enter a 4-digit check-in code.</span>';
                 return;
             }
 
@@ -73,12 +120,12 @@ const html = `
             let usedCodes = JSON.parse(localStorage.getItem(usedCodesKey)) || [];
 
             if (usedCodes.includes(enteredCode)) {
-                resultDiv.innerHTML = \`<span style="color: red;">This code has already been used. Please enter a different code.</span>\`;
+                resultDiv.innerHTML = '<span style="color: red;">This code has already been used. Please enter a different code.</span>';
                 return;
             }
 
             try {
-                resultDiv.innerHTML = \`<span style="color: blue;">Checking...</span>\`; // Show checking status
+                resultDiv.innerHTML = '<span style="color: blue;">Checking...</span>'; 
 
                 const startTime = performance.now();
 
@@ -109,21 +156,21 @@ const html = `
                             usedCodes.push(enteredCode);
                             localStorage.setItem(usedCodesKey, JSON.stringify(usedCodes));
 
-                            resultDiv.innerHTML = \`<span style="color: green;">Code \${enteredCode} for event \${eventCode} is valid. You earned \${data.points} points!</span>\`;
+                            resultDiv.innerHTML = '<span style="color: green;">Code ' + enteredCode + ' for event ' + eventCode + ' is valid. You earned ' + data.points + ' points!</span>';
                         } else {
-                            resultDiv.innerHTML = \`<span style="color: red;">Code \${enteredCode} for event \${eventCode} is invalid. Try again.</span>\`;
+                            resultDiv.innerHTML = '<span style="color: red;">Code ' + enteredCode + ' for event ' + eventCode + ' is invalid. Try again.</span>';
                         }
 
                         document.getElementById('total-points').innerText = \`Total Points: \${totalPoints}\`;
                     } else {
                         const errorMessage = await response.text();
                         console.error('Error checking the code:', errorMessage);
-                        resultDiv.innerHTML = \`<span style="color: red;">Error checking the code: \${errorMessage}</span>\`;
+                        resultDiv.innerHTML = '<span style="color: red;">Error checking the code: ' + errorMessage + '</span>';
                     }
-                }, totalDelay); // Dynamic delay based on response time
+                }, totalDelay); 
 
             } catch (error) {
-                resultDiv.innerHTML = \`<span style="color: red;">Error checking the code. Please try again later.</span>\`;
+                resultDiv.innerHTML = '<span style="color: red;">Error checking the code. Please try again later.</span>';
                 console.error('Fetch Error:', error);
             }
         }
@@ -138,15 +185,39 @@ const html = `
 </html>
 `;
 
+const privacy = `
+<!DOCTYPE html>
+<html lang="en">
+<a href="/index.html">&#8592; Back</a>
+<p>No user data is obtained through the use of this service.<br>Cookies are used to store check-in codes and score across browser sessions for a given event - these never leave your device.</p>
+<p>This service is hosted on Cloudflare Workers. To prevent mis-use, Cloudflare may place cookies to determine whether you are a bot or not. You can find their privacy policy here: <a href="https://www.cloudflare.com/en-gb/privacypolicy/">https://www.cloudflare.com/en-gb/privacypolicy/</a></p>
+</html>
+`;
+
+const help = `
+<!DOCTYPE html>
+<html lang="en">
+<a href="/index.html">&#8592; Back</a>
+<p>Using the map you have been provided with, go to the checkpoints and enter the check-in codes. This will add the relevant number of points to your total.</p>
+</html>
+`;
+
 const styles = `
 body {
-    font-family: Arial, sans-serif;
-    background-color: #f0f8ff;
+    font-family: sans-serif;
+    background-color: #CECECE;
     margin: 0;
     display: flex;
     justify-content: center;
     align-items: center;
     height: 100vh;
+    transition: background-color 0.3s ease, color 0.3s ease; /* Add transition for smooth change */
+}
+
+/* Dark mode styles */
+body.dark-mode {
+    background-color: #121212;
+    color: #e0e0e0;
 }
 
 .container {
@@ -155,6 +226,12 @@ body {
     padding: 20px;
     border-radius: 8px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s ease, color 0.3s ease; /* Add transition */
+}
+
+body.dark-mode .container {
+    background-color: #242424;
+    color: #e0e0e0;
 }
 
 input[type="text"] {
@@ -182,6 +259,25 @@ button:hover {
 #result {
     margin-top: 20px;
     font-size: 18px;
+}
+
+.link-container {
+    position: fixed; 
+    top: 10px; 
+    right: 10px; 
+    z-index: 100; 
+}
+
+/* Style the links in the link-container */
+.link-container a {
+    margin-right: 10px; 
+    color: #007bff; /* Default link color */
+    transition: color 0.3s ease; /* Add transition for smooth color change */
+}
+
+/* Change link color in dark mode */
+body.dark-mode .link-container a {
+    color: #99ccff; /* Example light blue color for better contrast */
 }
 `;
 
@@ -211,6 +307,14 @@ async function handleRequest(request) {
     } else if (url.pathname === '/styles.css') {
         return new Response(styles, {
             headers: { 'Content-Type': 'text/css' }
+        });
+    } else if (url.pathname === '/privacy.html') {
+        return new Response(privacy, {
+            headers: { 'Content-Type': 'text/html' }
+        });
+    } else if (url.pathname === '/help.html') {
+        return new Response(help, {
+            headers: { 'Content-Type': 'text/html' }
         });
     } else if (url.pathname === '/verify') {
         if (request.method === 'POST') {
