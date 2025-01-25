@@ -1,5 +1,4 @@
 
-
 const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -316,30 +315,35 @@ const leaderboardHTML = `
         async function updateLeaderboardDisplay(eventCode) {
             startCountdown(); // Restart countdown on each update
             try {
-                const response = await fetch(\`/api/leaderboard/get?eventCode=\${eventCode}\`); // Fetch leaderboard data from API
+                // Fetch leaderboard data from API endpoint /api/leaderboard/get
+                const response = await fetch(\`/api/leaderboard/get?eventCode=\${eventCode}\`);
                 if (!response.ok) {
-                    throw new Error(\`HTTP error! status: \${response.status}\`);
+                    // If the response status is not OK (200), throw an error
+                    throw new Error(\`HTTP error! status: \${response.status}, message: \${response.statusText}\`);
                 }
+                // Parse the JSON response from the API
                 const leaderboardData = await response.json();
                 const tableBody = document.getElementById('leaderboard-table-body');
-                tableBody.innerHTML = ''; // Clear existing table rows
+                tableBody.innerHTML = ''; // Clear existing table rows before adding new ones
 
                 if (leaderboardData.length === 0) {
                     tableBody.innerHTML = '<tr><td colspan="3">No teams have checked in yet for this event.</td></tr>';
                     return;
                 }
 
+                // Iterate through the leaderboard data and create table rows
                 leaderboardData.forEach((team, index) => {
                     const row = tableBody.insertRow();
                     const rankCell = row.insertCell();
                     const teamNameCell = row.insertCell();
                     const pointsCell = row.insertCell();
-                    rankCell.textContent = index + 1; // Rank based on position in sorted array
-                    teamNameCell.textContent = team.teamName;
-                    pointsCell.textContent = team.points;
+                    rankCell.textContent = index + 1; // Rank is the index + 1
+                    teamNameCell.textContent = team.teamName; // Team name from the data
+                    pointsCell.textContent = team.points;     // Points from the data
                 });
             } catch (error) {
                 console.error("Error fetching leaderboard data from API:", error);
+                // Display a user-friendly error message in the leaderboard table
                 document.getElementById('leaderboard-table-body').innerHTML = '<tr><td colspan="3" style="color: red;">Error loading leaderboard. Please try again.</td></tr>';
             }
         }
@@ -524,7 +528,7 @@ const events = {
     }
 };
 
-async function handleRequest(request) {
+async function handleRequest(request, env) { // Add 'env' to the handleRequest function
     const url = new URL(request.url);
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
@@ -553,15 +557,19 @@ async function handleRequest(request) {
             return new Response('Missing eventCode parameter', { status: 400 });
         }
         try {
-            const leaderboardKey = `leaderboardData_${eventCode}`;
-            const storedLeaderboardData = await LEADERBOARD_KV.get(leaderboardKey);
-            const leaderboardData = storedLeaderboardData ? JSON.parse(storedLeaderboardData) : [];
-            return new Response(JSON.stringify(leaderboardData), {
+            // Query D1 database to get leaderboard data for the given eventCode
+            const { results } = await env.MY_DB.prepare(`
+                SELECT teamName, points FROM leaderboard WHERE eventCode = ? ORDER BY points DESC
+            `).bind(eventCode).all();
+
+            // Return the leaderboard data as JSON response
+            return new Response(JSON.stringify(results), {
                 headers: { 'Content-Type': 'application/json' }
             });
         } catch (error) {
-            console.error('Error fetching leaderboard data from KV:', error);
-            return new Response('Error fetching leaderboard data', { status: 500 });
+            console.error('Error fetching leaderboard data from D1:', error);
+            // Return an error response if fetching from D1 fails
+            return new Response('Error fetching leaderboard data from D1', { status: 500 });
         }
     } else if (url.pathname === '/api/leaderboard/update') { // API endpoint to UPDATE leaderboard data
         if (request.method === 'POST') {
@@ -572,28 +580,20 @@ async function handleRequest(request) {
                     return new Response('Missing eventCode or teamName in request', { status: 400 });
                 }
 
-                const leaderboardKey = `leaderboardData_${eventCode}`;
-                let leaderboardData = [];
-                const storedLeaderboardData = await LEADERBOARD_KV.get(leaderboardKey);
-                if (storedLeaderboardData) {
-                    leaderboardData = JSON.parse(storedLeaderboardData);
-                }
+                // Insert or replace leaderboard data in D1 database
+                await env.MY_DB.prepare(`
+                    INSERT OR REPLACE INTO leaderboard (eventCode, teamName, points)
+                    VALUES (?, ?, ?)
+                `).bind(eventCode, teamName, totalPoints).run();
 
-                const teamIndex = leaderboardData.findIndex(team => team.teamName === teamName);
-                if (teamIndex !== -1) {
-                    leaderboardData[teamIndex].points = totalPoints;
-                } else {
-                    leaderboardData.push({ teamName: teamName, points: totalPoints });
-                }
-                leaderboardData.sort((a, b) => b.points - a.points);
-                await LEADERBOARD_KV.put(leaderboardKey, JSON.stringify(leaderboardData));
+
                 return new Response(JSON.stringify({ message: 'Leaderboard updated successfully' }), {
                     headers: { 'Content-Type': 'application/json' }
                 });
 
             } catch (error) {
-                console.error('Error updating leaderboard in KV:', error);
-                return new Response('Error updating leaderboard', { status: 500 });
+                console.error('Error updating leaderboard in D1:', error);
+                return new Response('Error updating leaderboard in D1', { status: 500 });
             }
         } else {
             return new Response('Method not allowed', { status: 405 });
@@ -638,6 +638,8 @@ async function handleRequest(request) {
     }
 }
 
-addEventListener('fetch', event => {
-    event.respondWith(handleRequest(event.request));
-});
+export default {
+    fetch(request, env, ctx) { // Export fetch function, receive env and ctx
+        return handleRequest(request, env); // Call handleRequest with request and env
+    },
+};
