@@ -1,3 +1,5 @@
+
+
 const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -11,9 +13,9 @@ const html = `
 <body>
     <div class="link-container">
         <a href="/help.html">Help</a>
-        <!-- <a href="/privacy.html">Privacy</a> -->
+        <a href="/leaderboard.html">Leaderboard</a>
         <a href="#" id="theme-toggle">Dark Mode 🌒</a>
-    </div> 
+    </div>
     <div class="container">
         <div id="event-code-section">
             <h1><i>Scavenger Hunt</i></h1>
@@ -21,12 +23,12 @@ const html = `
             <input type="text" id="event-code-input" placeholder="Event code" name="eventCodeParam">
             <p>Enter your team name:</p>
             <input type="text" id="team-name-input" placeholder="Team name">
-            <button onclick="saveEventCode()">Save</button> 
+            <button onclick="saveEventCode()">Save</button>
             <div id="event-code-error"></div>
         </div>
         <div id="check-in-section" style="display: none;">
             <h1>Event: <span id="displayed-event-code"></span></h1>
-            <p>Team: <span id="displayed-team-name"></span></p> <div id="team-name-error"></div> 
+            <p>Team: <span id="displayed-team-name"></span></p> <div id="team-name-error"></div>
             <p>Enter your 4-digit check-in code:</p>
             <input type="text" inputmode="numeric" id="code-input" maxlength="4" placeholder="4-digit code">
             <button onclick="checkCode()">Check-in</button>
@@ -74,28 +76,22 @@ const html = `
 
         function saveEventCode() {
             const eventCode = document.getElementById('event-code-input').value.trim();
-            const teamName = document.getElementById('team-name-input').value.trim(); 
+            const teamName = document.getElementById('team-name-input').value.trim();
             if (eventCode && teamName) {
                 localStorage.setItem('eventCode', eventCode);
-                localStorage.setItem('teamName', teamName); 
-                showCheckInSection(eventCode, teamName); 
+                localStorage.setItem('teamName', teamName);
+                showCheckInSection(eventCode, teamName);
             } else {
                 document.getElementById('event-code-error').innerHTML = '<span style="color: red;">Please enter a valid event code and team name.</span>';
             }
         }
 
         function showCheckInSection(eventCode) {
+            const teamName = localStorage.getItem('teamName'); // Retrieve team name here
             document.getElementById('event-code-section').style.display = 'none';
             document.getElementById('check-in-section').style.display = 'block';
             document.getElementById('displayed-event-code').innerText = eventCode;
-            updateTotalPoints(eventCode);
-        }
-
-        function showCheckInSection(eventCode, teamName) { 
-            document.getElementById('event-code-section').style.display = 'none';
-            document.getElementById('check-in-section').style.display = 'block';
-            document.getElementById('displayed-event-code').innerText = eventCode;
-            document.getElementById('displayed-team-name').innerText = teamName; 
+            document.getElementById('displayed-team-name').innerText = teamName;
             updateTotalPoints(eventCode);
         }
 
@@ -110,6 +106,7 @@ const html = `
             const eventCode = localStorage.getItem('eventCode');
             const enteredCode = document.getElementById('code-input').value;
             const resultDiv = document.getElementById('result');
+            const teamName = localStorage.getItem('teamName'); // Get team name for leaderboard
 
             if (!eventCode || enteredCode.length !== 4) {
                 resultDiv.innerHTML = '<span style="color: red;">Please enter a 4-digit check-in code.</span>';
@@ -125,7 +122,7 @@ const html = `
             }
 
             try {
-                resultDiv.innerHTML = '<span style="color: blue;">Checking...</span>'; 
+                resultDiv.innerHTML = '<span style="color: blue;">Checking...</span>';
 
                 const startTime = performance.now();
 
@@ -157,6 +154,9 @@ const html = `
                             localStorage.setItem(usedCodesKey, JSON.stringify(usedCodes));
 
                             resultDiv.innerHTML = '<span style="color: green;">Code ' + enteredCode + ' for event ' + eventCode + ' is valid. You earned ' + data.points + ' points!</span>';
+
+                            await updateLeaderboard(eventCode, teamName, totalPoints); // Update leaderboard after points are awarded
+
                         } else {
                             resultDiv.innerHTML = '<span style="color: red;">Code ' + enteredCode + ' for event ' + eventCode + ' is invalid. Try again.</span>';
                         }
@@ -167,7 +167,7 @@ const html = `
                         console.error('Error checking the code:', errorMessage);
                         resultDiv.innerHTML = '<span style="color: red;">Error checking the code: ' + errorMessage + '</span>';
                     }
-                }, totalDelay); 
+                }, totalDelay);
 
             } catch (error) {
                 resultDiv.innerHTML = '<span style="color: red;">Error checking the code. Please try again later.</span>';
@@ -180,15 +180,181 @@ const html = `
             let totalPoints = localStorage.getItem(totalPointsKey) ? parseInt(localStorage.getItem(totalPointsKey)) : 0;
             document.getElementById('total-points').innerText = \`Total Points: \${totalPoints}\`;
         }
+
+        async function updateLeaderboard(eventCode, teamName, totalPoints) {
+            try {
+                const response = await fetch('/api/leaderboard/update', { // Call API endpoint to update leaderboard
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ eventCode: eventCode, teamName: teamName, totalPoints: totalPoints })
+                });
+                if (!response.ok) {
+                    console.error('Failed to update leaderboard via API:', response.statusText);
+                }
+            } catch (error) {
+                console.error('Error updating leaderboard via API:', error);
+            }
+        }
+
+
     </script>
 </body>
 </html>
 `;
 
+const leaderboardHTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale: 1.0">
+    <title>Scavenger Hunt Leaderboard</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="link-container">
+        <a href="/help.html">Help</a>
+        <a href="/index.html">← Back to Check-in</a>
+        <a href="#" id="theme-toggle-leaderboard">Dark Mode 🌒</a>
+    </div>
+    <div class="container">
+        <h1>Leaderboard</h1>
+        <div id="leaderboard-event-select" style="display:none;">
+            <label for="event-code-select">Select Event: </label>
+            <input type="text" id="event-code-select" placeholder="Enter Event Code">
+            <button onclick="loadLeaderboard()">Load Leaderboard</button>
+            <div id="leaderboard-error" style="color: red;"></div>
+        </div>
+        <div id="leaderboard-section" style="display: none;">
+            <h2>Event: <span id="leaderboard-displayed-event-code"></span></h2>
+            <div id="leaderboard-update-countdown">Next update in <span id="countdown-timer"></span> seconds...</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Team Name</th>
+                        <th>Points</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-table-body">
+                    <!-- Leaderboard rows will be inserted here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.body.classList.add('dark-mode');
+            }
+            const savedEventCode = localStorage.getItem('eventCode');
+            if (savedEventCode) {
+                document.getElementById('leaderboard-event-select').style.display = 'none';
+                document.getElementById('leaderboard-section').style.display = 'block';
+                document.getElementById('leaderboard-displayed-event-code').innerText = savedEventCode;
+                localStorage.setItem('leaderboardEventCode', savedEventCode); // Ensure event code is stored for updates
+                loadLeaderboard(savedEventCode); // Load leaderboard immediately
+            } else {
+                document.getElementById('leaderboard-event-select').style.display = 'block'; // Show event select if no event code
+                document.getElementById('leaderboard-section').style.display = 'none';
+            }
+        });
+
+        const themeToggleLeaderboard = document.getElementById('theme-toggle-leaderboard');
+
+        themeToggleLeaderboard.addEventListener('click', (event) => {
+            event.preventDefault(); // Prevent default link behavior
+
+            document.body.classList.toggle('dark-mode');
+
+            // Update the link text based on the current mode
+            if (document.body.classList.contains('dark-mode')) {
+                themeToggleLeaderboard.textContent = 'Light Mode ☀️';
+            } else {
+                themeToggleLeaderboard.textContent = 'Dark Mode 🌒';
+            }
+        });
+
+        let updateInterval;
+        let countdownInterval;
+        let countdownValue = 10;
+
+        function startCountdown() {
+            countdownValue = 10;
+            document.getElementById('countdown-timer').textContent = countdownValue;
+            countdownInterval = setInterval(() => {
+                countdownValue--;
+                document.getElementById('countdown-timer').textContent = countdownValue;
+                if (countdownValue <= 0) {
+                    clearInterval(countdownInterval);
+                }
+            }, 1000);
+        }
+
+
+        function loadLeaderboard(eventCode) {
+            if (!eventCode) {
+                eventCode = document.getElementById('event-code-select').value.trim(); // Get from input if not passed as argument
+            }
+            if (eventCode) {
+                localStorage.setItem('leaderboardEventCode', eventCode); // Store event code for updates
+                document.getElementById('leaderboard-displayed-event-code').innerText = eventCode;
+                document.getElementById('leaderboard-event-select').style.display = 'none';
+                document.getElementById('leaderboard-section').style.display = 'block';
+                updateLeaderboardDisplay(eventCode);
+                clearInterval(updateInterval); // Clear any existing interval
+                updateInterval = setInterval(() => updateLeaderboardDisplay(eventCode), 10000); // Set interval for automatic updates every 10 seconds
+                startCountdown(); // Initial countdown start
+            } else {
+                document.getElementById('leaderboard-error').innerText = 'Please enter an event code to view the leaderboard.';
+            }
+        }
+
+
+        async function updateLeaderboardDisplay(eventCode) {
+            startCountdown(); // Restart countdown on each update
+            try {
+                const response = await fetch(\`/api/leaderboard/get?eventCode=\${eventCode}\`); // Fetch leaderboard data from API
+                if (!response.ok) {
+                    throw new Error(\`HTTP error! status: \${response.status}\`);
+                }
+                const leaderboardData = await response.json();
+                const tableBody = document.getElementById('leaderboard-table-body');
+                tableBody.innerHTML = ''; // Clear existing table rows
+
+                if (leaderboardData.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="3">No teams have checked in yet for this event.</td></tr>';
+                    return;
+                }
+
+                leaderboardData.forEach((team, index) => {
+                    const row = tableBody.insertRow();
+                    const rankCell = row.insertCell();
+                    const teamNameCell = row.insertCell();
+                    const pointsCell = row.insertCell();
+                    rankCell.textContent = index + 1; // Rank based on position in sorted array
+                    teamNameCell.textContent = team.teamName;
+                    pointsCell.textContent = team.points;
+                });
+            } catch (error) {
+                console.error("Error fetching leaderboard data from API:", error);
+                document.getElementById('leaderboard-table-body').innerHTML = '<tr><td colspan="3" style="color: red;">Error loading leaderboard. Please try again.</td></tr>';
+            }
+        }
+
+
+    </script>
+</body>
+</html>
+`;
+
+
 const privacy = `
 <!DOCTYPE html>
 <html lang="en">
-<a href="/index.html">&#8592; Back</a>
+<a href="/index.html">← Back</a>
 <p>No user data is obtained through the use of this service.<br>Cookies are used to store check-in codes and score across browser sessions for a given event - these never leave your device.</p>
 <p>This service is hosted on Cloudflare Workers. To prevent mis-use, Cloudflare may place cookies to determine whether you are a bot or not. You can find their privacy policy here: <a href="https://www.cloudflare.com/en-gb/privacypolicy/">https://www.cloudflare.com/en-gb/privacypolicy/</a></p>
 </html>
@@ -197,7 +363,7 @@ const privacy = `
 const help = `
 <!DOCTYPE html>
 <html lang="en">
-<a href="/index.html">&#8592; Back</a>
+<a href="/index.html">← Back</a>
 <p>Using the map you have been provided with, go to the checkpoints and enter the check-in codes. This will add the relevant number of points to your total.</p>
 </html>
 `;
@@ -227,6 +393,9 @@ body.dark-mode {
     border-radius: 8px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
     transition: background-color 0.3s ease, color 0.3s ease; /* Add transition */
+    max-width: 800px; /* Added max-width for better readability on larger screens */
+    width: 100%; /* Ensure it takes full width of its container */
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
 }
 
 body.dark-mode .container {
@@ -240,6 +409,9 @@ input[type="text"] {
     font-size: 16px;
     border: 1px solid #ccc;
     border-radius: 4px;
+    width: calc(100% - 22px); /* Adjust width to account for padding and border */
+    box-sizing: border-box; /* To include padding and border in width */
+    max-width: 300px; /* Maximum width for input fields */
 }
 
 button {
@@ -262,23 +434,78 @@ button:hover {
 }
 
 .link-container {
-    position: fixed; 
-    top: 10px; 
-    right: 10px; 
-    z-index: 100; 
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 100;
 }
 
 /* Style the links in the link-container */
 .link-container a {
-    margin-right: 10px; 
+    margin-right: 10px;
     color: #007bff; /* Default link color */
     transition: color 0.3s ease; /* Add transition for smooth color change */
+    text-decoration: none; /* Remove underline from links */
 }
 
 /* Change link color in dark mode */
 body.dark-mode .link-container a {
     color: #99ccff; /* Example light blue color for better contrast */
 }
+
+/* Leaderboard Styles */
+#leaderboard-section table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+#leaderboard-section th, #leaderboard-section td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+#leaderboard-section th {
+    background-color: #f4f4f4;
+}
+
+body.dark-mode #leaderboard-section th {
+    background-color: #333;
+    color: #e0e0e0;
+    border-color: #555;
+}
+body.dark-mode #leaderboard-section td {
+    border-color: #555;
+}
+
+
+#leaderboard-event-select {
+    margin-bottom: 20px;
+}
+
+#leaderboard-event-select input[type="text"] {
+    width: calc(50% - 22px); /* Adjust width for event code input on leaderboard page */
+    max-width: 200px;
+    display: inline-block; /* Keep input and button on the same line */
+    margin-right: 10px;
+}
+
+#leaderboard-event-select button {
+    display: inline-block; /* Keep input and button on the same line */
+}
+
+#leaderboard-update-countdown {
+    margin-top: 10px;
+    font-size: 0.9em;
+    color: #777;
+}
+
+body.dark-mode #leaderboard-update-countdown {
+    color: #999;
+}
+
+
 `;
 
 
@@ -316,7 +543,63 @@ async function handleRequest(request) {
         return new Response(help, {
             headers: { 'Content-Type': 'text/html' }
         });
-    } else if (url.pathname === '/verify') {
+    } else if (url.pathname === '/leaderboard.html') {
+        return new Response(leaderboardHTML, {
+            headers: { 'Content-Type': 'text/html' }
+        });
+    } else if (url.pathname === '/api/leaderboard/get') { // API endpoint to GET leaderboard data
+        const eventCode = url.searchParams.get('eventCode');
+        if (!eventCode) {
+            return new Response('Missing eventCode parameter', { status: 400 });
+        }
+        try {
+            const leaderboardKey = `leaderboardData_${eventCode}`;
+            const storedLeaderboardData = await LEADERBOARD_KV.get(leaderboardKey);
+            const leaderboardData = storedLeaderboardData ? JSON.parse(storedLeaderboardData) : [];
+            return new Response(JSON.stringify(leaderboardData), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+        } catch (error) {
+            console.error('Error fetching leaderboard data from KV:', error);
+            return new Response('Error fetching leaderboard data', { status: 500 });
+        }
+    } else if (url.pathname === '/api/leaderboard/update') { // API endpoint to UPDATE leaderboard data
+        if (request.method === 'POST') {
+            try {
+                const requestData = await request.json();
+                const { eventCode, teamName, totalPoints } = requestData;
+                if (!eventCode || !teamName) {
+                    return new Response('Missing eventCode or teamName in request', { status: 400 });
+                }
+
+                const leaderboardKey = `leaderboardData_${eventCode}`;
+                let leaderboardData = [];
+                const storedLeaderboardData = await LEADERBOARD_KV.get(leaderboardKey);
+                if (storedLeaderboardData) {
+                    leaderboardData = JSON.parse(storedLeaderboardData);
+                }
+
+                const teamIndex = leaderboardData.findIndex(team => team.teamName === teamName);
+                if (teamIndex !== -1) {
+                    leaderboardData[teamIndex].points = totalPoints;
+                } else {
+                    leaderboardData.push({ teamName: teamName, points: totalPoints });
+                }
+                leaderboardData.sort((a, b) => b.points - a.points);
+                await LEADERBOARD_KV.put(leaderboardKey, JSON.stringify(leaderboardData));
+                return new Response(JSON.stringify({ message: 'Leaderboard updated successfully' }), {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+            } catch (error) {
+                console.error('Error updating leaderboard in KV:', error);
+                return new Response('Error updating leaderboard', { status: 500 });
+            }
+        } else {
+            return new Response('Method not allowed', { status: 405 });
+        }
+    }
+     else if (url.pathname === '/verify') {
         if (request.method === 'POST') {
             const requestData = await request.json();
             const { eventCode, code } = requestData;
